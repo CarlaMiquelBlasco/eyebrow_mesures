@@ -32,7 +32,7 @@ def find_matching_column(columns: List[str], targets_norm: List[str]) -> str:
 def keep_measures_for_model(df: pd.DataFrame, model: str) -> pd.DataFrame:
     """
     MP3D -> *_3d_mm_const
-    MPP2D, TDDFA_2D -> *_mm_const but NOT *_3d_mm_const
+    MP2D, TDDFA_2D -> *_mm_const but NOT *_3d_mm_const
     """
     m = model.upper()
     measures = df["Measure"].astype(str)
@@ -40,7 +40,7 @@ def keep_measures_for_model(df: pd.DataFrame, model: str) -> pd.DataFrame:
     if m in ("MP3D,TDDFA_3D"):
         return df[measures.str.endswith("_3d_mm_const")].copy()
 
-    if m in ("MPP2D", "TDDFA_2D"):
+    if m in ("MP2D", "TDDFA_2D"):
         return df[measures.str.endswith("_mm_const") & ~measures.str.endswith("_3d_mm_const")].copy()
 
     raise ValueError(f"Unexpected model: {model}")
@@ -120,8 +120,8 @@ def main():
     )
     ap.add_argument(
         "--models",
-        default="MP3D,MPP2D,TDDFA_2D,TDDFA_3D",
-        help="Comma-separated list: MP3D,MPP2D,TDDFA_2D,TDDFA_3D",
+        default="MP3D,MP2D,TDDFA_2D,TDDFA_3D",
+        help="Comma-separated list: MP3D,MP2D,TDDFA_2D,TDDFA_3D",
     )
     ap.add_argument("--out_xlsx1", default="exp1_mmconst_by_participant.xlsx")
     ap.add_argument("--out_xlsx2", default="exp1_mmconst_by_model.xlsx")
@@ -264,8 +264,8 @@ if __name__ == "__main__":
 cd /Users/carlamiquelblasco/Desktop/NONMANUAL/eyebrows/code_refactor
 
 PYTHONPATH=src python scripts/run_metrics.py \
-  --results_dir "/Users/carlamiquelblasco/Desktop/NONMANUAL/eyebrows/code_refactor/results/exp1" \
-  --out_xlsx1 "/Users/carlamiquelblasco/Desktop/NONMANUAL/eyebrows/code_refactor/results/exp1_mmconst_by_participant.xlsx" \
-  --out_xlsx2 "/Users/carlamiquelblasco/Desktop/NONMANUAL/eyebrows/code_refactor/results/exp1_mmconst_by_model.xlsx"
+  --results_dir "/Users/carlamiquelblasco/Desktop/NONMANUAL/eyebrows/code_refactor/results/exp1_v6" \
+  --out_xlsx1 "/Users/carlamiquelblasco/Desktop/NONMANUAL/eyebrows/code_refactor/results/exp1_v6/metrics/exp1_mmconst_by_participant_v6.xlsx" \
+  --out_xlsx2 "/Users/carlamiquelblasco/Desktop/NONMANUAL/eyebrows/code_refactor/results/exp1_v6/metrics/exp1_mmconst_by_model_v6.xlsx"
 
 '''

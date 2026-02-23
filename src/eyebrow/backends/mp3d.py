@@ -5,9 +5,12 @@ import cv2
 import pandas as pd
 import mediapipe as mp
 from typing import List, Tuple
+import os
+from typing import Optional, Dict
 
 from ..mp_pose import EYE, estimate_pose_euler
 from ..metrics_common import safe_mean, split_inner_outer
+from ..utils.orientation import infer_from_path, fix_orientation, save_debug_frame_once
 
 
 BROW_POINTS = {
@@ -96,7 +99,30 @@ def compute_brow_measures_point_plane_mp3d(face_landmarks):
     return measures, scale_3d
 
 
-def extract_video_mp3d(video_path: str) -> pd.DataFrame:
+def _maybe_save_fail_frame(
+    frame_bgr: np.ndarray,
+    out_dir: Optional[str],
+    status: str,
+    frame_idx: int,
+    max_per_status: int,
+    counters: Dict[str, int],
+) -> None:
+    if out_dir is None:
+        return
+    if counters.get(status, 0) >= max_per_status:
+        return
+    os.makedirs(out_dir, exist_ok=True)
+    subdir = os.path.join(out_dir, status)
+    os.makedirs(subdir, exist_ok=True)
+    out_path = os.path.join(subdir, f"frame_{frame_idx:06d}.png")
+    cv2.imwrite(out_path, frame_bgr)
+    counters[status] = counters.get(status, 0) + 1
+
+
+def extract_video_mp3d(
+    video_path: str,
+    fail_examples_dir: Optional[str] = None,
+    max_fail_examples_per_status: int = 30,) -> pd.DataFrame:
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         raise RuntimeError(f"Cannot open video: {video_path}")
@@ -113,44 +139,85 @@ def extract_video_mp3d(video_path: str) -> pd.DataFrame:
 
     rows = []
     frame_idx = 0
-
+    fail_counters: Dict[str, int] = {}
+    participant, video_type = infer_from_path(video_path)
+    print("[ORIENT]", video_path, "->", participant, video_type)
     while True:
         ok, frame_bgr = cap.read()
+        frame_bgr = fix_orientation(frame_bgr, participant, video_type)
+        # Save one debug frame per video
+        if frame_idx == 0:
+            save_debug_frame_once(frame_bgr, video_path)
         if not ok:
             break
 
         h, w = frame_bgr.shape[:2]
         t = (frame_idx / fps) if fps > 0 else float("nan")
 
-        res = face_mesh.process(cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB))
+        status = "exception"
+        row_base = {"frame": frame_idx, "time_s": t, "w": int(w), "h": int(h)}
 
-        if res.multi_face_landmarks:
+        try:
+            res = face_mesh.process(cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB))
+
+            if not res.multi_face_landmarks:
+                status = "no_face"
+                _maybe_save_fail_frame(frame_bgr, fail_examples_dir, status, frame_idx,
+                                       max_fail_examples_per_status, fail_counters)
+                rows.append({**row_base, "status": status})
+                frame_idx += 1
+                continue
+
             fl = res.multi_face_landmarks[0]
 
-            pitch, yaw, roll, scale_px = estimate_pose_euler(fl, w, h)
+            # pose
+            try:
+                pitch, yaw, roll, scale_px = estimate_pose_euler(fl, w, h)
+            except Exception:
+                status = "pose_fail"
+                _maybe_save_fail_frame(frame_bgr, fail_examples_dir, status, frame_idx,
+                                       max_fail_examples_per_status, fail_counters)
+                rows.append({**row_base, "status": status})
+                frame_idx += 1
+                continue
 
+            # measures (3D plane fit can fail)
             try:
                 measures, scale_3d = compute_brow_measures_point_plane_mp3d(fl)
             except Exception:
-                measures, scale_3d = None, float("nan")
+                status = "measure_fail"
+                _maybe_save_fail_frame(frame_bgr, fail_examples_dir, status, frame_idx,
+                                       max_fail_examples_per_status, fail_counters)
+                rows.append({
+                    **row_base,
+                    "status": status,
+                    "pitch": float(pitch),
+                    "yaw": float(yaw),
+                    "roll": float(roll),
+                    "scale_px": float(scale_px),
+                    "scale_3d": float("nan"),
+                })
+                frame_idx += 1
+                continue
 
+            status = "ok"
             row = {
-                "frame": frame_idx,
-                "time_s": t,
-                "w": int(w),
-                "h": int(h),
+                **row_base,
+                "status": status,
                 "pitch": float(pitch),
                 "yaw": float(yaw),
                 "roll": float(roll),
                 "scale_px": float(scale_px),
                 "scale_3d": float(scale_3d),
             }
-            if measures is not None:
-                row.update(measures)
-
+            row.update(measures)
             rows.append(row)
-        else:
-            rows.append({"frame": frame_idx, "time_s": t, "w": int(w), "h": int(h)})
+
+        except Exception:
+            status = "exception"
+            _maybe_save_fail_frame(frame_bgr, fail_examples_dir, status, frame_idx,
+                                   max_fail_examples_per_status, fail_counters)
+            rows.append({**row_base, "status": status})
 
         frame_idx += 1
 

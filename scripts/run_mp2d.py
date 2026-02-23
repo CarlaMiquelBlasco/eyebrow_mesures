@@ -21,12 +21,14 @@ def main():
 
     # Batch mode
     ap.add_argument("--experiment", type=int, default=1, choices=[1, 2, 3])
-    ap.add_argument("--people", type=str, default="p2")
+    ap.add_argument("--people", type=str, default="p1,p2,p3,p4")
+    ap.add_argument("--fail_examples_dir", type=str, default="")
+    ap.add_argument("--max_fail_examples_per_status", type=int, default=30)
 
     # Base directories
     ap.add_argument("--control_dir", type=str, default="datasets/own_data/controlled_video")
     ap.add_argument("--target_dir", type=str, default="datasets/own_data/target_video_exp{X}")
-    ap.add_argument("--out_dir", type=str, default="results/exp{X}")
+    ap.add_argument("--out_dir", type=str, default="results/exp{X}_v6")
 
     # Hyperparameters
     ap.add_argument("--t0", type=float, default=7.0)
@@ -79,10 +81,13 @@ def main():
             continue
 
         feature_cols_norm = ["pitch", "yaw", "roll", "scale"] if use_scale else ["pitch", "yaw", "roll"]
-
         backend = BackendSpec(
             name="MP2D",
             extract=extract_video_mp2d,
+            extract_kwargs={
+                "fail_examples_dir": (args.fail_examples_dir.strip() or None),
+                "max_fail_examples_per_status": args.max_fail_examples_per_status,
+            }, 
             d_cols_norm=d_cols_norm,
             feature_cols_norm=feature_cols_norm,
             mm_factor_mode="quiet_scale",
@@ -90,7 +95,7 @@ def main():
             norm_to_mm_replace=("_norm", "_mm_const"),
         )
 
-        out_csv = out_dir / f"{p}_exp{exp}_MPP2D_F.csv"
+        out_csv = out_dir / f"{p}_exp{exp}_MP2D_F.csv"
 
         print(f"\n=== {p} | exp{exp}  ===")
         print(f"control: {control_video}")
@@ -113,8 +118,8 @@ if __name__ == "__main__":
 '''
 cd /Users/carlamiquelblasco/Desktop/NONMANUAL/eyebrows/code_refactor
 
-PYTHONPATH=src nohup python scripts/run_mp2d.py --experiment 3 \
-  > results/logs/run_mp2d_exp3.log 2>&1 &
+PYTHONPATH=src nohup python scripts/run_mp2d.py --experiment 1 \
+  > results/logs/run_mp2d_exp1_v6.log 2>&1 &
 
 
 PYTHONPATH=src python scripts/run_mp2d.py --experiment 1 \
@@ -125,7 +130,7 @@ PYTHONPATH=src python scripts/run_mp2d.py --experiment 1 \
   --target_dir datasets/own_data/target_video_exp1/p2_exp1.mp4 \
   --outer_eye_mm 90.0 \
   --experiment 1 \
-  --out_dir results/exp1/p2_exp1_MP222D_F.csv
+  --out_dir results/exp1/p2_exp1_MP2D_F.csv
 
 
    --norm_use_scale \

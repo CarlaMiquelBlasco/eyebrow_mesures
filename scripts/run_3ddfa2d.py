@@ -30,6 +30,8 @@ def main():
     )
     ap.add_argument("--no_onnx", action="store_true")
     ap.add_argument("--device", type=str, default="cpu")
+    ap.add_argument("--fail_examples_dir", type=str, default="")
+    ap.add_argument("--max_fail_examples_per_status", type=int, default=30)
 
     # Batch mode
     ap.add_argument("--experiment", type=int, default=2, choices=[1, 2, 3])
@@ -38,7 +40,7 @@ def main():
     # Base directories
     ap.add_argument("--control_dir", type=str, default="/Users/carlamiquelblasco/Desktop/NONMANUAL/eyebrows/code_refactor/datasets/own_data/controlled_video")
     ap.add_argument("--target_dir", type=str, default="/Users/carlamiquelblasco/Desktop/NONMANUAL/eyebrows/code_refactor/datasets/own_data/target_video_exp{X}")
-    ap.add_argument("--out_dir", type=str, default="/Users/carlamiquelblasco/Desktop/NONMANUAL/eyebrows/code_refactor/results/exp{X}")
+    ap.add_argument("--out_dir", type=str, default="/Users/carlamiquelblasco/Desktop/NONMANUAL/eyebrows/code_refactor/results/exp{X}_v6")
 
     # Pipeline params
     ap.add_argument("--t0", type=float, default=7.0)
@@ -97,10 +99,12 @@ def main():
             name="TDDFA_2D",
             extract=extract_video_3ddfa2d_norm,
             extract_kwargs={
-                "tddfa_repo": args.tddfa_repo,
-                "use_onnx": use_onnx,
-                "device": args.device,
-            },
+                    "tddfa_repo": args.tddfa_repo,
+                    "use_onnx": use_onnx,
+                    "device": args.device,
+                    "fail_examples_dir": (args.fail_examples_dir.strip() or None),
+                    "max_fail_examples_per_status": args.max_fail_examples_per_status,
+                },
             d_cols_norm=d_cols_norm,
             feature_cols_norm=feature_cols,
             mm_factor_mode="quiet_scale",
@@ -136,10 +140,10 @@ source /Users/carlamiquelblasco/Desktop/NONMANUAL/eyebrows/code/3DDFAV2/3ddfav2/
 
 PYTHONPATH=/Users/carlamiquelblasco/Desktop/NONMANUAL/eyebrows/code_refactor/src nohup python /Users/carlamiquelblasco/Desktop/NONMANUAL/eyebrows/code_refactor/scripts/run_3ddfa2d.py \
   --tddfa_repo . \
-  --experiment 3 \
+  --experiment 1 \
   --outer_eye_mm 90 \
   --device cpu \
-  > /Users/carlamiquelblasco/Desktop/NONMANUAL/eyebrows/code_refactor/results/logs/run_3ddfa2d_exp3.log 2>&1 &
+  > /Users/carlamiquelblasco/Desktop/NONMANUAL/eyebrows/code_refactor/results/logs/run_3ddfa2d_exp1_v6.log 2>&1 &
 
 
 

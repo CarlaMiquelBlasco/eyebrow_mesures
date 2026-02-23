@@ -25,6 +25,7 @@ from typing import Dict, List, Tuple, Optional
 import cv2
 import numpy as np
 import pandas as pd
+from ..utils.orientation import infer_from_path, fix_orientation, save_debug_frame_once
 
 # ---------------------------------------------------------------------
 # Numpy compatibility (some 3DDFA setups still reference np.int/np.long)
@@ -88,14 +89,18 @@ def compute_brow_measures_norm(lm_norm68: np.ndarray) -> BrowMeasuresNorm:
     """
     L_a = tuple(lm_norm68[EYE_68["L_INNER"]])
     L_b = tuple(lm_norm68[EYE_68["L_OUTER"]])
+    if L_a[0] > L_b[0]:
+        L_a, L_b = L_b, L_a
     R_a = tuple(lm_norm68[EYE_68["R_INNER"]])
     R_b = tuple(lm_norm68[EYE_68["R_OUTER"]])
+    if R_a[0] > R_b[0]:
+        R_a, R_b = R_b, R_a
 
     L_pts = [tuple(lm_norm68[i]) for i in BROW_68["L"]]
     R_pts = [tuple(lm_norm68[i]) for i in BROW_68["R"]]
 
-    L_d = [signed_point_line_distance(p, L_a, L_b) for p in L_pts]
-    R_d = [signed_point_line_distance(p, R_a, R_b) for p in R_pts]
+    L_d = [abs(signed_point_line_distance(p, L_a, L_b)) for p in L_pts]
+    R_d = [abs(signed_point_line_distance(p, R_a, R_b)) for p in R_pts]
 
     L_in, L_out = split_inner_outer(L_d)
     R_in, R_out = split_inner_outer(R_d)
@@ -109,6 +114,31 @@ def compute_brow_measures_norm(lm_norm68: np.ndarray) -> BrowMeasuresNorm:
         R_all_mean_norm=safe_mean(R_d),
     )
 
+
+def _maybe_save_fail_frame(
+        frame_bgr: np.ndarray,
+        out_dir: Optional[str],
+        status: str,
+        frame_idx: int,
+        max_per_status: int,
+        counters: Dict[str, int],
+    ) -> None:
+        """
+        Save a BGR frame into out_dir/<status>/ as PNG, up to max_per_status per status.
+        """
+        if out_dir is None:
+            return
+        if counters.get(status, 0) >= max_per_status:
+            return
+
+        os.makedirs(out_dir, exist_ok=True)
+        subdir = os.path.join(out_dir, status)
+        os.makedirs(subdir, exist_ok=True)
+
+        out_path = os.path.join(subdir, f"frame_{frame_idx:06d}.png")
+        # write as png
+        cv2.imwrite(out_path, frame_bgr)
+        counters[status] = counters.get(status, 0) + 1
 
 # =============================================================================
 # 3DDFA_V2 wrapper with repo-root injection
@@ -153,26 +183,49 @@ class ThreeDDFA2D:
         self.tddfa = TDDFA(gpu_mode=(device != "cpu"), **cfg, use_onnx=use_onnx)
         self.calc_pose = calc_pose
 
-    def infer_one(self, frame_bgr: np.ndarray) -> Tuple[Optional[np.ndarray], Optional[Tuple[float, float, float]]]:
-        boxes = self.face_boxes(frame_bgr)
-        if boxes is None or len(boxes) == 0:
-            return None, None
+    def infer_one(
+        self,
+        frame_bgr: np.ndarray,
+    ) -> Tuple[Optional[np.ndarray], Optional[Tuple[float, float, float]], str]:
+        """
+        Returns:
+        lm_px: (N,2) float32 or None
+        pose: (pitch,yaw,roll) or None
+        status: one of {"ok","no_face","no_fit","pose_fail","exception"}
+        """
+        try:
+            boxes = self.face_boxes(frame_bgr)
+            if boxes is None or len(boxes) == 0:
+                return None, None, "no_face"
 
-        boxes = np.array(boxes)
-        best_idx = int(np.argmax((boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1])))
-        boxes = boxes[best_idx:best_idx + 1]
+            boxes = np.array(boxes)
+            best_idx = int(np.argmax((boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1])))
+            boxes = boxes[best_idx:best_idx + 1]
 
-        param_lst, roi_box_lst = self.tddfa(frame_bgr, boxes)
-        if param_lst is None or len(param_lst) == 0:
-            return None, None
+            param_lst, roi_box_lst = self.tddfa(frame_bgr, boxes)
+            if param_lst is None or len(param_lst) == 0:
+                return None, None, "no_fit"
 
-        ver_lst = self.tddfa.recon_vers(param_lst, roi_box_lst, dense_flag=False)
-        ver = ver_lst[0]          # (3, N)
-        lm_px = ver[:2, :].T      # (N, 2)
+            ver_lst = self.tddfa.recon_vers(param_lst, roi_box_lst, dense_flag=False)
+            if ver_lst is None or len(ver_lst) == 0:
+                return None, None, "no_fit"
 
-        _, pose = self.calc_pose(param_lst[0])
-        yaw, pitch, roll = float(pose[0]), float(pose[1]), float(pose[2])
-        return lm_px.astype(np.float32), (pitch, yaw, roll)
+            ver = ver_lst[0]          # (3, N)
+            lm_px = ver[:2, :].T      # (N, 2)
+
+            # Pose
+            _, pose = self.calc_pose(param_lst[0])
+            if pose is None or len(pose) < 3:
+                return None, None, "pose_fail"
+
+            yaw, pitch, roll = float(pose[0]), float(pose[1]), float(pose[2])
+
+            # NOTE: keep your convention: return (pitch,yaw,roll)
+            return lm_px.astype(np.float32), (pitch, yaw, roll), "ok"
+
+        except Exception:
+            # If something unexpected happens, label it.
+            return None, None, "exception"
 
 
 # =============================================================================
@@ -183,7 +236,10 @@ def extract_video_3ddfa2d_norm(
     tddfa_repo: Optional[str],
     use_onnx: bool = True,
     device: str = "cpu",
+    fail_examples_dir: Optional[str] = None, 
+    max_fail_examples_per_status: int = 30, 
 ) -> pd.DataFrame:
+    fail_counters: Dict[str, int] = {}
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         raise RuntimeError(f"Cannot open video: {video_path}")
@@ -193,19 +249,55 @@ def extract_video_3ddfa2d_norm(
 
     rows = []
     frame_idx = 0
-
+    save_frame = True
+    participant, video_type = infer_from_path(video_path)
+    print("[ORIENT]", video_path, "->", participant, video_type)
     while True:
         ok, frame_bgr = cap.read()
+        frame_bgr = fix_orientation(frame_bgr, participant, video_type)
+        # Save one debug frame per video
+        if save_frame:
+            save_debug_frame_once(frame_bgr, video_path)
+            save_frame = False
         if not ok:
             break
 
         h, w = frame_bgr.shape[:2]
         t = (frame_idx / fps) if fps > 0 else float("nan")
 
-        lm_px, pose = model.infer_one(frame_bgr)
+        lm_px, pose, status = model.infer_one(frame_bgr)
 
-        if lm_px is None or pose is None or lm_px.shape[0] < 68:
-            rows.append({"frame": frame_idx, "time_s": t, "w": int(w), "h": int(h)})
+        # Always record status (super important)
+        base_row = {"frame": frame_idx, "time_s": t, "w": int(w), "h": int(h), "status": status}
+
+        # Fail cases
+        if status != "ok" or lm_px is None or pose is None:
+            # Save example frames for this failure status
+            _maybe_save_fail_frame(
+                frame_bgr=frame_bgr,
+                out_dir=fail_examples_dir,
+                status=status,
+                frame_idx=frame_idx,
+                max_per_status=max_fail_examples_per_status,
+                counters=fail_counters,
+            )
+            rows.append(base_row)
+            frame_idx += 1
+            continue
+
+        # Landmark count sanity
+        if lm_px.shape[0] < 68:
+            status2 = "bad_landmarks"
+            _maybe_save_fail_frame(
+                frame_bgr=frame_bgr,
+                out_dir=fail_examples_dir,
+                status=status2,
+                frame_idx=frame_idx,
+                max_per_status=max_fail_examples_per_status,
+                counters=fail_counters,
+            )
+            base_row["status"] = status2
+            rows.append(base_row)
             frame_idx += 1
             continue
 
@@ -234,6 +326,7 @@ def extract_video_3ddfa2d_norm(
                 "time_s": t,
                 "w": int(w),
                 "h": int(h),
+                "status": "ok",
                 "pitch": float(pitch),
                 "yaw": float(yaw),
                 "roll": float(roll),

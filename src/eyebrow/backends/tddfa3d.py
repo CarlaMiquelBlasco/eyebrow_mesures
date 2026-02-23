@@ -25,6 +25,8 @@ from typing import Dict, List, Tuple, Optional
 import cv2
 import numpy as np
 import pandas as pd
+from ..utils.orientation import infer_from_path, fix_orientation, save_debug_frame_once
+
 
 # ---------------------------------------------------------------------
 # Numpy compatibility
@@ -138,7 +140,26 @@ def compute_brow_measures_point_plane_3d_norm(lm3d68: np.ndarray) -> Tuple[BrowM
     )
     return measures, scale_3d
 
+def _maybe_save_fail_frame(
+    frame_bgr: np.ndarray,
+    out_dir: Optional[str],
+    status: str,
+    frame_idx: int,
+    max_per_status: int,
+    counters: Dict[str, int],
+) -> None:
+    if out_dir is None:
+        return
+    if counters.get(status, 0) >= max_per_status:
+        return
 
+    os.makedirs(out_dir, exist_ok=True)
+    subdir = os.path.join(out_dir, status)
+    os.makedirs(subdir, exist_ok=True)
+
+    out_path = os.path.join(subdir, f"frame_{frame_idx:06d}.png")
+    cv2.imwrite(out_path, frame_bgr)
+    counters[status] = counters.get(status, 0) + 1
 # =============================================================================
 # repo root injection
 # =============================================================================
@@ -178,26 +199,48 @@ class ThreeDDFA3D:
         self.tddfa = TDDFA(gpu_mode=(device != "cpu"), **cfg, use_onnx=use_onnx)
         self.calc_pose = calc_pose
 
-    def infer_one(self, frame_bgr: np.ndarray) -> Tuple[Optional[np.ndarray], Optional[Tuple[float, float, float]]]:
-        boxes = self.face_boxes(frame_bgr)
-        if boxes is None or len(boxes) == 0:
-            return None, None
+    def infer_one(
+        self,
+        frame_bgr: np.ndarray,
+    ) -> Tuple[Optional[np.ndarray], Optional[Tuple[float, float, float]], str]:
+        """
+        Returns:
+        lm3d: (N,3) float32 or None
+        pose: (pitch,yaw,roll) or None
+        status: one of {"ok","no_face","no_fit","pose_fail","exception"}
+        """
+        try:
+            boxes = self.face_boxes(frame_bgr)
+            if boxes is None or len(boxes) == 0:
+                return None, None, "no_face"
 
-        boxes = np.array(boxes)
-        best_idx = int(np.argmax((boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1])))
-        boxes = boxes[best_idx:best_idx + 1]
+            boxes = np.array(boxes)
+            best_idx = int(np.argmax((boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1])))
+            boxes = boxes[best_idx:best_idx + 1]
 
-        param_lst, roi_box_lst = self.tddfa(frame_bgr, boxes)
-        if param_lst is None or len(param_lst) == 0:
-            return None, None
+            param_lst, roi_box_lst = self.tddfa(frame_bgr, boxes)
+            if param_lst is None or len(param_lst) == 0:
+                return None, None, "no_fit"
 
-        ver_lst = self.tddfa.recon_vers(param_lst, roi_box_lst, dense_flag=False)
-        ver = ver_lst[0]   # (3, N)
-        lm3d = ver.T       # (N, 3)
+            ver_lst = self.tddfa.recon_vers(param_lst, roi_box_lst, dense_flag=False)
+            if ver_lst is None or len(ver_lst) == 0:
+                return None, None, "no_fit"
 
-        _, pose = self.calc_pose(param_lst[0])
-        yaw, pitch, roll = float(pose[0]), float(pose[1]), float(pose[2])
-        return lm3d.astype(np.float32), (pitch, yaw, roll)
+            ver = ver_lst[0]          # (3, N)
+            lm3d = ver.T              # (N, 3)  <-- IMPORTANT: keep xyz
+
+            # Pose
+            _, pose = self.calc_pose(param_lst[0])
+            if pose is None or len(pose) < 3:
+                return None, None, "pose_fail"
+
+            yaw, pitch, roll = float(pose[0]), float(pose[1]), float(pose[2])
+
+            # Your convention: (pitch, yaw, roll)
+            return lm3d.astype(np.float32), (pitch, yaw, roll), "ok"
+
+        except Exception:
+            return None, None, "exception"
 
 
 def extract_video_3ddfa3d_norm(
@@ -205,6 +248,8 @@ def extract_video_3ddfa3d_norm(
     tddfa_repo: Optional[str],
     use_onnx: bool = True,
     device: str = "cpu",
+    fail_examples_dir: Optional[str] = None,
+    max_fail_examples_per_status: int = 30,
 ) -> pd.DataFrame:
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
@@ -215,28 +260,93 @@ def extract_video_3ddfa3d_norm(
 
     rows = []
     frame_idx = 0
-
+    save_frame = True
+    fail_counters: Dict[str, int] = {}
+    participant, video_type = infer_from_path(video_path)
+    print("[ORIENT]", video_path, "->", participant, video_type)
     while True:
         ok, frame_bgr = cap.read()
+        frame_bgr = fix_orientation(frame_bgr, participant, video_type)
+        # Save one debug frame per video
+        if save_frame:
+            save_debug_frame_once(frame_bgr, video_path)
+            save_frame =False
         if not ok:
             break
 
         h, w = frame_bgr.shape[:2]
         t = (frame_idx / fps) if fps > 0 else float("nan")
 
-        lm3d, pose = model.infer_one(frame_bgr)
-        if lm3d is None or pose is None or lm3d.shape[0] < 68:
-            rows.append({"frame": frame_idx, "time_s": t, "w": int(w), "h": int(h)})
+        lm3d, pose, status = model.infer_one(frame_bgr)
+
+        base_row = {
+            "frame": frame_idx,
+            "time_s": t,
+            "w": int(w),
+            "h": int(h),
+            "status": status,
+        }
+
+        # hard failures (no pose/landmarks)
+        if status != "ok" or lm3d is None or pose is None:
+            _maybe_save_fail_frame(
+                frame_bgr=frame_bgr,
+                out_dir=fail_examples_dir,
+                status=status,
+                frame_idx=frame_idx,
+                max_per_status=max_fail_examples_per_status,
+                counters=fail_counters,
+            )
+            rows.append(base_row)
+            frame_idx += 1
+            continue
+
+        # landmark sanity
+        if lm3d.shape[0] < 68 or lm3d.shape[1] != 3:
+            st2 = "bad_landmarks"
+            _maybe_save_fail_frame(
+                frame_bgr=frame_bgr,
+                out_dir=fail_examples_dir,
+                status=st2,
+                frame_idx=frame_idx,
+                max_per_status=max_fail_examples_per_status,
+                counters=fail_counters,
+            )
+            base_row["status"] = st2
+            rows.append(base_row)
             frame_idx += 1
             continue
 
         pitch, yaw, roll = pose
         lm3d68 = lm3d[:68, :].astype(np.float64)
 
+        # Compute 3D brow measures (plane fit can fail)
         try:
             brow, scale_3d = compute_brow_measures_point_plane_3d_norm(lm3d68)
         except Exception:
-            brow, scale_3d = None, float("nan")
+            st3 = "plane_fail"
+            _maybe_save_fail_frame(
+                frame_bgr=frame_bgr,
+                out_dir=fail_examples_dir,
+                status=st3,
+                frame_idx=frame_idx,
+                max_per_status=max_fail_examples_per_status,
+                counters=fail_counters,
+            )
+            row = base_row.copy()
+            row.update(
+                {
+                    "status": st3,
+                    "pitch": float(pitch),
+                    "yaw": float(yaw),
+                    "roll": float(roll),
+                    "scale_3d": float("nan"),
+                    "scale_px": float("nan"),
+                }
+            )
+            rows.append(row)
+            frame_idx += 1
+            continue
 
         # optional pixel scale proxy (from x,y projection)
         lm_px = lm3d68[:, :2].copy()
@@ -244,29 +354,23 @@ def extract_video_3ddfa3d_norm(
         rx, ry = lm_px[EYE_68["R_OUTER"]]
         scale_px = float(math.hypot(rx - lx, ry - ly))
 
-        row = {
-            "frame": frame_idx,
-            "time_s": t,
-            "w": int(w),
-            "h": int(h),
-            "pitch": float(pitch),
-            "yaw": float(yaw),
-            "roll": float(roll),
-            "scale_3d": float(scale_3d),
-            "scale_px": float(scale_px),
-        }
-
-        if brow is not None:
-            row.update(
-                {
-                    "L_inner_mean_3d_norm": brow.L_inner_mean_3d_norm,
-                    "L_outer_mean_3d_norm": brow.L_outer_mean_3d_norm,
-                    "L_all_mean_3d_norm": brow.L_all_mean_3d_norm,
-                    "R_inner_mean_3d_norm": brow.R_inner_mean_3d_norm,
-                    "R_outer_mean_3d_norm": brow.R_outer_mean_3d_norm,
-                    "R_all_mean_3d_norm": brow.R_all_mean_3d_norm,
-                }
-            )
+        row = base_row.copy()
+        row.update(
+            {
+                "status": "ok",
+                "pitch": float(pitch),
+                "yaw": float(yaw),
+                "roll": float(roll),
+                "scale_3d": float(scale_3d),
+                "scale_px": float(scale_px),
+                "L_inner_mean_3d_norm": brow.L_inner_mean_3d_norm,
+                "L_outer_mean_3d_norm": brow.L_outer_mean_3d_norm,
+                "L_all_mean_3d_norm": brow.L_all_mean_3d_norm,
+                "R_inner_mean_3d_norm": brow.R_inner_mean_3d_norm,
+                "R_outer_mean_3d_norm": brow.R_outer_mean_3d_norm,
+                "R_all_mean_3d_norm": brow.R_all_mean_3d_norm,
+            }
+        )
 
         rows.append(row)
         frame_idx += 1

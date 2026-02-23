@@ -1,0 +1,21 @@
+/Users/carlamiquelblasco/Desktop/NONMANUAL/eyebrows/code_refactor/src/eyebrow/backends/tddfa2d.py:34: FutureWarning: In the future `np.long` will be defined as the corresponding NumPy scalar.
+  if not hasattr(np, "long"):
+
+=== p1 | exp1 ===
+control: /Users/carlamiquelblasco/Desktop/NONMANUAL/eyebrows/code_refactor/datasets/own_data/controlled_video/p1_control.mov
+target : /Users/carlamiquelblasco/Desktop/NONMANUAL/eyebrows/code_refactor/datasets/own_data/target_video_exp1/p1_exp1.mov
+out    : /Users/carlamiquelblasco/Desktop/NONMANUAL/eyebrows/code_refactor/results/exp1_v3/p1_exp1_TDDFA_2D_F.csv
+Traceback (most recent call last):
+  File "/Users/carlamiquelblasco/Desktop/NONMANUAL/eyebrows/code_refactor/scripts/run_3ddfa2d.py", line 132, in <module>
+    main()
+  File "/Users/carlamiquelblasco/Desktop/NONMANUAL/eyebrows/code_refactor/scripts/run_3ddfa2d.py", line 122, in main
+    run_pipeline(
+  File "/Users/carlamiquelblasco/Desktop/NONMANUAL/eyebrows/code_refactor/src/eyebrow/pipeline.py", line 59, in run_pipeline
+    df_control = backend.extract(control_video, **backend.extract_kwargs)
+  File "/Users/carlamiquelblasco/Desktop/NONMANUAL/eyebrows/code_refactor/src/eyebrow/backends/tddfa2d.py", line 247, in extract_video_3ddfa2d_norm
+    model = ThreeDDFA2D(tddfa_repo=tddfa_repo, use_onnx=use_onnx, device=device)
+  File "/Users/carlamiquelblasco/Desktop/NONMANUAL/eyebrows/code_refactor/src/eyebrow/backends/tddfa2d.py", line 168, in __init__
+    repo_root = _resolve_repo_root(tddfa_repo)
+  File "/Users/carlamiquelblasco/Desktop/NONMANUAL/eyebrows/code_refactor/src/eyebrow/backends/tddfa2d.py", line 156, in _resolve_repo_root
+    raise RuntimeError(f"Invalid 3DDFA_V2 repo root (missing configs): {cfg}")
+RuntimeError: Invalid 3DDFA_V2 repo root (missing configs): /Users/carlamiquelblasco/Desktop/NONMANUAL/eyebrows/code_refactor/configs/mb1_120x120.yml

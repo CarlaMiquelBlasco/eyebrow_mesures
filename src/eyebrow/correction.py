@@ -42,10 +42,10 @@ def fit_pose_bias(
         X = sub[feature_cols].values.astype(np.float64)
         y = sub[c].values.astype(np.float64)
 
-        poly = PolynomialFeatures(degree=degree, include_bias=False)
+        poly = PolynomialFeatures(degree=degree, include_bias=True)
         Xp = poly.fit_transform(X)
 
-        model = Ridge(alpha=ridge_alpha, fit_intercept=False)
+        model = Ridge(alpha=ridge_alpha, fit_intercept=True)
         model.fit(Xp, y)
 
         models[c] = (poly, model)

@@ -22,11 +22,13 @@ def main():
     # Batch mode
     ap.add_argument("--experiment", type=int, default=2, choices=[1, 2, 3])
     ap.add_argument("--people", type=str, default="p1,p2,p3,p4")
+    ap.add_argument("--fail_examples_dir", type=str, default="")
+    ap.add_argument("--max_fail_examples_per_status", type=int, default=30)
 
     # Base directories
     ap.add_argument("--control_dir", type=str, default="datasets/own_data/controlled_video")
     ap.add_argument("--target_dir", type=str, default="datasets/own_data/target_video_exp{X}")
-    ap.add_argument("--out_dir", type=str, default="results/exp{X}")
+    ap.add_argument("--out_dir", type=str, default="results/exp{X}_v6")
 
     # Pipeline params
     ap.add_argument("--t0", type=float, default=7.0)
@@ -65,6 +67,10 @@ def main():
     backend = BackendSpec(
         name="MP3D",
         extract=extract_video_mp3d,
+        extract_kwargs={
+            "fail_examples_dir": (args.fail_examples_dir.strip() or None),
+            "max_fail_examples_per_status": args.max_fail_examples_per_status,
+        },
         d_cols_norm=d_cols_3d_norm,
         feature_cols_norm=feature_cols,
         mm_factor_mode="direct",          # mm = norm * outer_eye_mm
@@ -119,9 +125,9 @@ if __name__ == "__main__":
 cd /Users/carlamiquelblasco/Desktop/NONMANUAL/eyebrows/code_refactor
 
 PYTHONPATH=src nohup python scripts/run_mp3d.py \
-  --experiment 3 \
+  --experiment 1 \
   --outer_eye_mm 90 \
-  > results/logs/run_mp3d_exp3.log 2>&1 &
+  > results/logs/run_mp3d_exp1_v6.log 2>&1 &
 
 
 
