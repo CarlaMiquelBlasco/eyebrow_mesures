@@ -133,10 +133,13 @@ if __name__ == "__main__":
 
 
 '''
+Clone and run 3DDFA_V2 repo: https://github.com/cleardusk/3DDFA_V2 
+
 cd /Users/carlamiquelblasco/Desktop/NONMANUAL/eyebrows/code/3DDFAV2/3DDFA_V2
 
 source /Users/carlamiquelblasco/Desktop/NONMANUAL/eyebrows/code/3DDFAV2/3ddfav2/bin/activate
 
+To run in the background:
 
 PYTHONPATH=/Users/carlamiquelblasco/Desktop/NONMANUAL/eyebrows/code_refactor/src nohup python /Users/carlamiquelblasco/Desktop/NONMANUAL/eyebrows/code_refactor/scripts/run_3ddfa2d.py \
   --tddfa_repo . \
@@ -146,6 +149,7 @@ PYTHONPATH=/Users/carlamiquelblasco/Desktop/NONMANUAL/eyebrows/code_refactor/src
   > /Users/carlamiquelblasco/Desktop/NONMANUAL/eyebrows/code_refactor/results/logs/run_3ddfa2d_exp1_v6.log 2>&1 &
 
 
+To run in the frontground:
 
   PYTHONPATH=/Users/carlamiquelblasco/Desktop/NONMANUAL/eyebrows/code_refactor/src \
 python /Users/carlamiquelblasco/Desktop/NONMANUAL/eyebrows/code_refactor/scripts/run_3ddfa2d.py \
