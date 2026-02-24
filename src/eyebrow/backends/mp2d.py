@@ -119,6 +119,9 @@ def _maybe_save_fail_frame(
     max_per_status: int,
     counters: Dict[str, int],
 ) -> None:
+    '''
+    save the frame if it is not valid
+    '''
     if out_dir is None:
         return
     if counters.get(status, 0) >= max_per_status:
@@ -157,7 +160,7 @@ def extract_video_mp2d(
     while True:
         ok, frame_bgr = cap.read()
         frame_bgr = fix_orientation(frame_bgr, participant, video_type)
-        # Save one debug frame per video
+        # Save one debug frame per video (important to check because frames may be read rotated and it can break the whole experiment)
         if frame_idx == 0:
             save_debug_frame_once(frame_bgr, video_path)
         if not ok:

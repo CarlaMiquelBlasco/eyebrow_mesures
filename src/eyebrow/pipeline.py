@@ -59,7 +59,7 @@ def run_pipeline(
     df_control = backend.extract(control_video, **backend.extract_kwargs)
     df_target = backend.extract(target_video, **backend.extract_kwargs)
 
-    # 2) d0 (norm only)
+    # 2) d0 (norm only, mm only for reporting)
     d0_norm = compute_d0(df_control, cfg.t0, backend.d_cols_norm)
 
     # 3) mm factor for norm -> mm_const_from_norm

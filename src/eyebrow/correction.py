@@ -8,6 +8,9 @@ from sklearn.linear_model import Ridge
 
 
 def compute_d0(df_control: pd.DataFrame, t0: float, cols: List[str]) -> Dict[str, float]:
+    '''
+    Computed as the avergae measure for the first segment (still segment) on the control video
+    '''
     quiet = df_control[(df_control["time_s"] >= 0.0) & (df_control["time_s"] < t0)].copy()
     d0: Dict[str, float] = {}
     for c in cols:

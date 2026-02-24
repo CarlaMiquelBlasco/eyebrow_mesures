@@ -15,7 +15,7 @@ POSE_LM = {
     "R_MOUTH": 291,
 }
 
-# Approximate 3D model points for solvePnP (units arbitrary but consistent)
+# Approximate 3D model points for solvePnP 
 MODEL_3D = np.array(
     [
         [0.0, 0.0, 0.0],        # nose tip
@@ -34,7 +34,7 @@ EYE = {"L_INNER": 133, "L_OUTER": 33, "R_INNER": 362, "R_OUTER": 263}
 def estimate_pose_euler(face_landmarks, frame_w: int, frame_h: int) -> Tuple[float, float, float, float]:
     """
     Return (pitch_deg, yaw_deg, roll_deg, scale_px).
-    scale_px = outer-eye distance (px) between landmarks 33 and 263.
+    scale_px = outer-eye distance (px) between landmarks 33 and 263. Later used to convert units
     """
     lm = face_landmarks.landmark
 
@@ -88,7 +88,7 @@ def estimate_pose_euler(face_landmarks, frame_w: int, frame_h: int) -> Tuple[flo
     yaw_deg = math.degrees(yaw)
     roll_deg = math.degrees(roll)
 
-    # scale proxy: outer-eye distance in px
+    # scale proxy: outer-eye distance in px. Later used to convert units
     lx, ly = image_points[2]
     rx, ry = image_points[3]
     scale_px = float(math.hypot(rx - lx, ry - ly))

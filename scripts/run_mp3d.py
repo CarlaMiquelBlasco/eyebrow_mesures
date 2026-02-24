@@ -124,19 +124,22 @@ if __name__ == "__main__":
 
 cd /Users/carlamiquelblasco/Desktop/NONMANUAL/eyebrows/code_refactor
 
+To run in the background:
+
 PYTHONPATH=src nohup python scripts/run_mp3d.py \
   --experiment 1 \
   --outer_eye_mm 90 \
   > results/logs/run_mp3d_exp1_v6.log 2>&1 &
 
 
+  
+To run in the frontground:
 
 PYTHONPATH=src python scripts/run_mp3d.py \
   --control_video datasets/own_data/controlled_video/p1_control.mov \
-  --target_video datasets/own_data/target_video_exp3/p1_exp3.mov \
+  --target_video datasets/own_data/target_video_exp3/p1_exp1.mov \
   --outer_eye_mm 90.0 \
-  --experiment 3 \
-  --out_csv results/exp3/p1_exp3_MP3D_F.csv
+  --experiment 1 \
+  --out_csv results/exp1/p1_exp1_MP3D_F.csv
 
-    --features_use_scale3d \
 '''

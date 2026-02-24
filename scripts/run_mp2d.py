@@ -19,7 +19,6 @@ def parse_people(s: str) -> List[str]:
 def main():
     ap = argparse.ArgumentParser()
 
-    # Batch mode
     ap.add_argument("--experiment", type=int, default=1, choices=[1, 2, 3])
     ap.add_argument("--people", type=str, default="p1,p2,p3,p4")
     ap.add_argument("--fail_examples_dir", type=str, default="")
@@ -31,10 +30,10 @@ def main():
     ap.add_argument("--out_dir", type=str, default="results/exp{X}_v6")
 
     # Hyperparameters
-    ap.add_argument("--t0", type=float, default=7.0)
-    ap.add_argument("--degree", type=int, default=2)
+    ap.add_argument("--t0", type=float, default=7.0) # seconds for which the person is still in the control video
+    ap.add_argument("--degree", type=int, default=2) # for the regression
     ap.add_argument("--ridge_alpha", type=float, default=1e-3)
-    ap.add_argument("--outer_eye_mm", type=float, default=90.0)
+    ap.add_argument("--outer_eye_mm", type=float, default=90.0) # real distance between outer-left and outer-right eye for the person in mm
     ap.add_argument("--motion_segments", type=str, default="")
 
     args = ap.parse_args()
@@ -64,7 +63,6 @@ def main():
     ]
     d_cols_norm = [c + "_norm" for c in d_cols_px]
 
-    # Two variants: F (no scale feature) and G (with scale feature)
     use_scale = False
 
     for p in people:
@@ -118,13 +116,14 @@ if __name__ == "__main__":
 '''
 cd /Users/carlamiquelblasco/Desktop/NONMANUAL/eyebrows/code_refactor
 
+
+To run in the background:
+
 PYTHONPATH=src nohup python scripts/run_mp2d.py --experiment 1 \
   > results/logs/run_mp2d_exp1_v6.log 2>&1 &
 
 
-PYTHONPATH=src python scripts/run_mp2d.py --experiment 1 \
-
-
+To run in the frontground:
 
   --control_dir datasets/own_data/controlled_video/p2_control.mp4 \
   --target_dir datasets/own_data/target_video_exp1/p2_exp1.mp4 \
@@ -133,5 +132,4 @@ PYTHONPATH=src python scripts/run_mp2d.py --experiment 1 \
   --out_dir results/exp1/p2_exp1_MP2D_F.csv
 
 
-   --norm_use_scale \
 '''
